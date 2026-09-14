@@ -7,9 +7,14 @@
 //
 //   ANDROID APP -> SECURE API SERVER -> AI SERVICE
 //
-// The Anthropic API key lives ONLY here, as an environment
-// variable on whatever host runs this file (Render, Railway,
-// Fly.io, etc.) — never inside the Android app, never in Git.
+// Using Google Gemini here because its free tier needs no credit
+// card (spec #27: provider-independent — swap this file's upstream
+// call and you can point at a different provider without touching
+// the Android app at all).
+//
+// The Gemini API key lives ONLY here, as an environment variable
+// on whatever host runs this file (Render, Railway, Fly.io, etc.)
+// — never inside the Android app, never in Git.
 //
 // The Android app authenticates to THIS server with a separate,
 // low-value "app shared secret" (APP_SHARED_SECRET) — not the
@@ -22,14 +27,15 @@ const app = express();
 app.use(express.json({ limit: '32kb' }));
 
 const PORT = process.env.PORT || 3000;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const APP_SHARED_SECRET = process.env.APP_SHARED_SECRET;
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
+const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-if (!ANTHROPIC_API_KEY) {
+if (!GEMINI_API_KEY) {
   console.error(
-    'FATAL: ANTHROPIC_API_KEY is not set. Set it as an environment ' +
-    'variable on your host — never hard-code it in this file.'
+    'FATAL: GEMINI_API_KEY is not set. Get a free key at ' +
+    'https://aistudio.google.com/apikey and set it as an ' +
+    'environment variable on your host — never hard-code it here.'
   );
   process.exit(1);
 }
@@ -111,37 +117,53 @@ app.post('/api/chat', requireAppSecret, async (req, res) => {
         .slice(-20) // cap context sent upstream
     : [];
 
-  const messages = [
-    ...cleanHistory.map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user', content: message }
+  // Gemini uses "model" instead of "assistant" for the AI's turns,
+  // and wraps text in a {parts:[{text}]} shape rather than a plain
+  // string.
+  const contents = [
+    ...cleanHistory.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }]
+    })),
+    { role: 'user', parts: [{ text: message }] }
   ];
 
   try {
-    const upstream = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 1024,
-        messages
-      })
-    });
+    const upstream = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': GEMINI_API_KEY
+        },
+        body: JSON.stringify({
+          contents,
+          system_instruction: {
+            parts: [
+              {
+                text:
+                  'You are JARVIS, a helpful personal AI assistant ' +
+                  'inside an Android app. Keep replies concise and ' +
+                  'conversational, suitable for a voice assistant.'
+              }
+            ]
+          }
+        })
+      }
+    );
 
     if (!upstream.ok) {
       const errorBody = await upstream.text();
-      console.error('Anthropic API error:', upstream.status, errorBody);
+      console.error('Gemini API error:', upstream.status, errorBody);
       return res.status(502).json({ error: 'AI Backend Offline' });
     }
 
     const data = await upstream.json();
 
-    const reply = (data.content || [])
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
+    const reply = (data.candidates || [])
+      .flatMap((c) => c.content?.parts || [])
+      .map((p) => p.text || '')
       .join('\n')
       .trim();
 
