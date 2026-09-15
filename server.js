@@ -29,10 +29,8 @@ app.use(express.json({ limit: '32kb' }));
 const PORT = process.env.PORT || 3000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const APP_SHARED_SECRET = process.env.APP_SHARED_SECRET;
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-
-if (!GEMINI_API_KEY) {
-  console.error(
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+(!GEMINI_API_KEY)KEY  console.error(
     'FATAL: GEMINI_API_KEY is not set. Get a free key at ' +
     'https://aistudio.google.com/apikey and set it as an ' +
     'environment variable on your host — never hard-code it here.'
