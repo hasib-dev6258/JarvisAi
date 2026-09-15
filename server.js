@@ -30,7 +30,9 @@ const PORT = process.env.PORT || 3000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const APP_SHARED_SECRET = process.env.APP_SHARED_SECRET;
 const MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
-(!GEMINI_API_KEY)KEY  console.error(
+
+if (!GEMINI_API_KEY) {
+  console.error(
     'FATAL: GEMINI_API_KEY is not set. Get a free key at ' +
     'https://aistudio.google.com/apikey and set it as an ' +
     'environment variable on your host — never hard-code it here.'
@@ -102,8 +104,6 @@ app.post('/api/chat', requireAppSecret, async (req, res) => {
     return res.status(400).json({ error: 'message is too long' });
   }
 
-  // history, if provided, must be an array of {role, content} pairs.
-  // We validate shape rather than trusting the client blindly.
   const cleanHistory = Array.isArray(history)
     ? history
         .filter(
@@ -112,12 +112,9 @@ app.post('/api/chat', requireAppSecret, async (req, res) => {
             (m.role === 'user' || m.role === 'assistant') &&
             typeof m.content === 'string'
         )
-        .slice(-20) // cap context sent upstream
+        .slice(-20)
     : [];
 
-  // Gemini uses "model" instead of "assistant" for the AI's turns,
-  // and wraps text in a {parts:[{text}]} shape rather than a plain
-  // string.
   const contents = [
     ...cleanHistory.map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
